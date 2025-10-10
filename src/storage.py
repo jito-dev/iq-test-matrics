@@ -10,13 +10,6 @@ def cert_id_exists(cert_id):
 		search = dbres.fetchone()
 		return bool(search)
 
-def get_payment_result(payment_id):
-	with DBAccess() as db:
-		dbres = db.cursor.execute(
-			"SELECT * FROM results WHERE payment_id = ?", (payment_id,))
-		row = dbres.fetchone()
-		if row:
-			return result_row_to_dict(row)
 
 def get_result(result_id):
 	with DBAccess() as db:

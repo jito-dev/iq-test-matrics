@@ -47,32 +47,19 @@ def index():
 def static(filepath):
 	return static_file(filepath, root=webroot)
 
-@route("/payment_options.json")
-def payment_options():
-	response.content_type = "application/json"
-	return json.dumps([
-		{"url": os.getenv("TIER1_LINK")},
-		{"url": os.getenv("TIER2_LINK")},
-		{"url": os.getenv("TIER3_LINK")},
-	])
-
-
-@route("/accept_payment")
-def accept_payment():
-	params = request.query.__dict__.get("dict") or {}
-	payment_id = params.get("stripe_session_token")[0]
-	
+@route("/submit_result", method="POST")
+def submit_result():
 	tester_data_str = unquote(request.get_cookie("tester_data"))
 	tester_data = json.loads(tester_data_str)
 	result = None
 	try:
-		result = tester.accept_payment(tester_data, payment_id)
+		result = tester.create_result(tester_data)
 	except Exception:
 		print(traceback.format_exc())
 	if result:
 		return redirect(f"/result/tier-{result['result_tier']}/{result['id']}")
 	else:
-		error_msg = "Unable to accept payment, try to reload page later."
+		error_msg = "Unable to create result, try to reload page later."
 		admin_contact = os.getenv("ADMIN_CONTACT")
 		if admin_contact:
 			error_msg += f" If error persists, contact <b>{admin_contact}</b>"

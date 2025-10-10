@@ -1,4 +1,4 @@
-import stripe, time, os, random, storage, io, datetime
+import time, os, random, storage, io, datetime
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from util import sanitize_html
@@ -37,44 +37,20 @@ def get_iq_score(answers, age):
 	
 	return score
 
-def accept_payment(tester_data, payment_id):
-	previous_result = storage.get_payment_result(payment_id)
-	if(previous_result):
-		print(f"Payment {payment_id} is already registered, skipping")
-		return previous_result
-	
-	stripe.api_key = os.environ["STRIPE_API_KEY"]
-	checkout_session = stripe.checkout.Session.retrieve(payment_id)
-	
-	if checkout_session["status"] != "complete":
-		print("Session status is not 'complete', aborting payment")
-		return False
-	if checkout_session["payment_status"] != "paid":
-		print("Session payment status is not 'paid', aborting payment")
-		return False
-	
+def create_result(tester_data):
 	result_id = get_new_cert_id()
 	age = tester_data["age"]
 	score = get_iq_score(tester_data["answers"], age)
 	submit_time = int(time.time())
 	user_name = tester_data["user_name"]
-	result_tier = get_payment_tier(checkout_session["payment_link"])
+	# Show certificate result (tier 3) by default
+	result_tier = 3
 	
 	result_row = (result_id, score, age, submit_time,
-		payment_id, user_name, result_tier)
+		None, user_name, result_tier)
 	storage.save_result(result_row)
 	
-	return storage.get_payment_result(payment_id)
-	
-def get_payment_tier(payment_link_id):
-	if payment_link_id == os.getenv("TIER1_LINK_ID"):
-		return 1
-	elif payment_link_id == os.getenv("TIER2_LINK_ID"):
-		return 2
-	elif payment_link_id == os.getenv("TIER3_LINK_ID"):
-		return 3
-	else:
-		return None
+	return storage.get_result(result_id)
 
 
 def get_new_cert_id():
