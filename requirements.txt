@@ -1,4 +1,3 @@
 bottle
 python-dotenv
-stripe
 pillow

@@ -1185,6 +1185,42 @@ button.finish .icon{
 }
 
 
+.result-submission{
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	width: 100%;
+	padding: 40px 20px;
+}
+
+.result-submission .result-card{
+	background: white;
+	border-radius: 15px;
+	padding: 40px;
+	max-width: 500px;
+	width: 100%;
+	text-align: center;
+	box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+
+.result-submission .result-card h3{
+	font-size: 2rem;
+	margin-bottom: 20px;
+	color: #333;
+}
+
+.result-submission .result-card p{
+	font-size: 1.1rem;
+	color: #666;
+	margin-bottom: 30px;
+	line-height: 1.6;
+}
+
+.result-submission .submit-result{
+	padding: 15px 40px;
+	font-size: 1.2rem;
+}
+
 .payment-options{
 	display: grid;
 	grid-template-columns: 1fr 1fr 1fr;

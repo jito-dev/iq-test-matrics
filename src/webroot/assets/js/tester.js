@@ -12,7 +12,6 @@ class Tester{
 	init(){
 		this.init_tests_data();
 		this.imgs_loaded = this.load_imgs();
-		this.load_payment_options();
 		this.built = this.build_elements();
 	}
 	
@@ -41,10 +40,6 @@ class Tester{
 		}
 	}
 	
-	load_payment_options(){
-		this.payment_options = fetch("payment_options.json")
-			.then(r => r.json());
-	}
 	
 	async load_imgs(){
 		const resp = await fetch("assets/img/tasks.zip");
@@ -385,9 +380,9 @@ class Tester{
 		
 		const self = this;
 		panel_el.addEventListener("click", e => {
-			const pay_btn_el = e.target.closest("button.choose");
-			if(pay_btn_el)
-				self.on_payment(+pay_btn_el.dataset.tier);
+			const submit_btn_el = e.target.closest("button.submit-result");
+			if(submit_btn_el)
+				self.on_submit_result();
 		});
 		
 		return paywall_el;
@@ -657,6 +652,10 @@ class Tester{
 		chosing_item_el.classList.add("active");
 		await sleep(600);
 		this.select_paywall_panel_tab(2);
+		
+		// Auto-submit after a short delay
+		await sleep(1000);
+		this.on_submit_result();
 	}
 	
 	select_paywall_panel_tab(n){
@@ -695,8 +694,13 @@ class Tester{
 			encodeURIComponent(JSON.stringify(data));
 	}
 	
-	async on_payment(tier){
-		document.location = (await this.payment_options)[tier].url;
+	async on_submit_result(){
+		// Submit the result directly to the server
+		const form = document.createElement('form');
+		form.method = 'POST';
+		form.action = '/submit_result';
+		document.body.appendChild(form);
+		form.submit();
 	}
 }
 
