@@ -52,6 +52,10 @@ def get_all_results():
 		rows = dbres.fetchall()
 		return [result_row_to_dict(row) for row in rows]
 
+def delete_result(result_id):
+	with DBAccess() as db:
+		db.cursor.execute("DELETE FROM results WHERE id = ?", (result_id,))
+
 class DBAccess():
 	def __init__(self):
 		init_needed = not db_path.exists()

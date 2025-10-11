@@ -172,22 +172,43 @@ def admin_logout():
 	response.delete_cookie("admin_session")
 	redirect("/admin/login")
 
+@route("/admin/delete/<result_id>", method="POST")
+def admin_delete_result(result_id):
+	require_admin()
+	try:
+		storage.delete_result(result_id)
+		return json.dumps({"success": True})
+	except Exception:
+		print(traceback.format_exc())
+		return json.dumps({"success": False})
+
 @route("/admin")
 def admin_panel():
 	require_admin()
 	
 	results = storage.get_all_results()
 	
-	# Calculate percentiles
-	all_scores = [r["score"] for r in results if r["score"]]
-	all_scores.sort()
+	# Calculate percentiles based on IQ distribution
+	# IQ follows normal distribution: mean=100, std_dev=15
+	import math
+	
+	def calculate_iq_percentile(iq_score):
+		"""Calculate percentile based on normal distribution of IQ scores"""
+		mean = 100
+		std_dev = 15
+		
+		# Calculate z-score
+		z_score = (iq_score - mean) / std_dev
+		
+		# Calculate cumulative probability using error function
+		# This gives us the percentile
+		percentile = 0.5 * (1 + math.erf(z_score / math.sqrt(2)))
+		return percentile * 100
 	
 	for result in results:
-		if result["score"] and all_scores:
-			# Calculate percentile
-			score = result["score"]
-			count_below = sum(1 for s in all_scores if s < score)
-			percentile = (count_below / len(all_scores)) * 100 if all_scores else 0
+		if result["score"]:
+			# Calculate percentile based on IQ distribution statistics
+			percentile = calculate_iq_percentile(result["score"])
 			result["percentile"] = round(percentile, 1)
 		else:
 			result["percentile"] = "N/A"
@@ -198,15 +219,17 @@ def admin_panel():
 		import datetime
 		date_time = datetime.datetime.fromtimestamp(result["submit_time"]).strftime("%Y-%m-%d %H:%M:%S") if result["submit_time"] else "N/A"
 		test_duration_str = f"{result['test_duration'] // 60}m {result['test_duration'] % 60}s" if result["test_duration"] else "N/A"
+		correct_answers_str = f"{result.get('correct_answers', 'N/A')} из 60" if result.get('correct_answers') is not None else "N/A"
 		
 		rows_html += f'''
-		<tr>
+		<tr data-id="{result.get("id", "")}">
 			<td>{result.get("email", "N/A")}</td>
 			<td>{date_time}</td>
 			<td>{result.get("score", "N/A")}</td>
 			<td>{test_duration_str}</td>
-			<td>{result.get("correct_answers", "N/A")}</td>
+			<td>{correct_answers_str}</td>
 			<td>{result.get("percentile", "N/A")}%</td>
+			<td><button class="delete-btn" data-id="{result.get("id", "")}">Удалить</button></td>
 		</tr>
 		'''
 	
@@ -273,6 +296,18 @@ def admin_panel():
 			tr:hover {{
 				background: #f9f9f9;
 			}}
+			.delete-btn {{
+				padding: 6px 12px;
+				background: #ff4444;
+				color: white;
+				border: none;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 12px;
+			}}
+			.delete-btn:hover {{
+				background: #cc0000;
+			}}
 			.stats {{
 				display: grid;
 				grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -328,6 +363,7 @@ def admin_panel():
 						<th>Test Duration</th>
 						<th>Correct Answers</th>
 						<th>Percentile</th>
+						<th>Actions</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -335,6 +371,35 @@ def admin_panel():
 				</tbody>
 			</table>
 		</div>
+		<script>
+			document.querySelectorAll('.delete-btn').forEach(btn => {{
+				btn.addEventListener('click', async function() {{
+					if(!confirm('Are you sure you want to delete this record?')) {{
+						return;
+					}}
+					
+					const resultId = this.dataset.id;
+					const row = document.querySelector(`tr[data-id="${{resultId}}"]`);
+					
+					try {{
+						const response = await fetch(`/admin/delete/${{resultId}}`, {{
+							method: 'POST'
+						}});
+						const data = await response.json();
+						
+						if(data.success) {{
+							row.remove();
+							// Refresh the page to update statistics
+							setTimeout(() => location.reload(), 500);
+						}} else {{
+							alert('Failed to delete record');
+						}}
+					}} catch(e) {{
+						alert('Error deleting record: ' + e.message);
+					}}
+				}});
+			}});
+		</script>
 	</body>
 	</html>
 	'''
