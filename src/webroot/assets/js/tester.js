@@ -5,6 +5,7 @@ class Tester{
 		this.last_answered = -1;
 		this.answers = [];
 		this.finished = false;
+		this.started_at = null;
 		
 		this.init();
 	}
@@ -340,23 +341,57 @@ class Tester{
 			.querySelector(".hidden-content .paywall-panel");
 		paywall_el.append(panel_el);
 		
-		let age_resolve, name_resolve;
+		let email_resolve, age_resolve, name_resolve;
+		this.user_email = new Promise(resolve => email_resolve = resolve);
 		this.user_age  = new Promise(resolve => age_resolve  = resolve);
 		this.user_name = new Promise(resolve => name_resolve = resolve);
 		
+		const email_form_el = panel_el.querySelector("form.email");
+		
 		const age_form_el = panel_el.querySelector("form.age");
 		const name_form_el = panel_el.querySelector("form.name");
+		const email_input_el = panel_el.querySelector(
+			"form.email input[type=\"email\"]");
 		const age_input_el = panel_el.querySelector(
 			"form.age input[type=\"text\"]");
 		const name_input_el = panel_el.querySelector(
 			"form.name input[type=\"text\"]");
+		const email_btn_el = panel_el.querySelector(
+			"form.email button[type=\"submit\"]");
 		const age_btn_el = panel_el.querySelector(
 			"form.age button[type=\"submit\"]");
 		const name_btn_el = panel_el.querySelector(
 			"form.name button[type=\"submit\"]");
 		
+		const email_error_el = panel_el.querySelector("form.email .error-message");
+		
 		age_input_el.addEventListener("input", e => {
 			e.target.value = e.target.value.replaceAll(/[^0-9]*/g, "");
+		});
+		
+		email_form_el.addEventListener("submit", async e => {
+			e.preventDefault();
+			const email = email_input_el.value.trim();
+			if(email && email.includes("@")){
+				email_btn_el.disabled = true;
+				email_error_el.textContent = "";
+				
+				// Check if email already exists
+				const response = await fetch("/check_email", {
+					method: "POST",
+					headers: {"Content-Type": "application/json"},
+					body: JSON.stringify({email: email})
+				});
+				const data = await response.json();
+				
+				if(data.exists){
+					email_error_el.textContent = "This email has already taken the test.";
+					email_btn_el.disabled = false;
+				} else {
+					email_input_el.disabled = true;
+					email_resolve(email);
+				}
+			}
 		});
 		
 		age_form_el.addEventListener("submit", e => {
@@ -637,21 +672,27 @@ class Tester{
 		calculating_item_el.classList.add("active");
 		await sleep(600);
 		this.select_paywall_panel_tab(0);
-		const user_age = await this.user_age;
+		const user_email = await this.user_email;
 		calculating_item_el.classList.remove("active");
 		calculating_item_el.classList.add("complete");
 		
 		generating_item_el.classList.add("active");
 		await sleep(600);
 		this.select_paywall_panel_tab(1);
-		const user_name = await this.user_name;
+		const user_age = await this.user_age;
 		generating_item_el.classList.remove("active");
 		generating_item_el.classList.add("complete");
 		
-		this.fill_result_cookie();
 		chosing_item_el.classList.add("active");
 		await sleep(600);
 		this.select_paywall_panel_tab(2);
+		const user_name = await this.user_name;
+		chosing_item_el.classList.remove("active");
+		chosing_item_el.classList.add("complete");
+		
+		this.fill_result_cookie();
+		await sleep(600);
+		this.select_paywall_panel_tab(3);
 		
 		// Auto-submit after a short delay
 		await sleep(1000);
@@ -685,10 +726,15 @@ class Tester{
 	}
 	
 	async fill_result_cookie(){
+		const finish_time = Math.floor(Date.now() / 1000);
+		const test_duration = finish_time - this.started_at;
+		
 		const data = {
 			answers: this.answers,
+			email: await this.user_email,
 			age: await this.user_age,
-			user_name: await this.user_name
+			user_name: await this.user_name,
+			test_duration: test_duration
 		}
 		document.cookie = "tester_data=" + 
 			encodeURIComponent(JSON.stringify(data));
