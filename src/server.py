@@ -203,7 +203,8 @@ def admin_panel():
 		# Calculate cumulative probability using error function
 		# This gives us the percentile
 		percentile = 0.5 * (1 + math.erf(z_score / math.sqrt(2)))
-		return percentile * 100
+		# Invert: 100% - percentile to show top percentage
+		return 100 - (percentile * 100)
 	
 	for result in results:
 		if result["score"]:
@@ -224,6 +225,7 @@ def admin_panel():
 		rows_html += f'''
 		<tr data-id="{result.get("id", "")}">
 			<td>{result.get("email", "N/A")}</td>
+			<td>{result.get("user_name", "N/A")}</td>
 			<td>{date_time}</td>
 			<td>{result.get("score", "N/A")}</td>
 			<td>{test_duration_str}</td>
@@ -358,6 +360,7 @@ def admin_panel():
 				<thead>
 					<tr>
 						<th>Email</th>
+						<th>Name</th>
 						<th>Date & Time</th>
 						<th>IQ Score</th>
 						<th>Test Duration</th>
