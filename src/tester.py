@@ -12,11 +12,15 @@ SCORE_TO_IQ_MAP = [None] * 15 + [62, 65, 65, 66, 67, 69, 70, 71, 72, 73, 75,
 	100, 102, 104, 106, 108, 110, 112, 114, 116, 118, 120, 122, 124, 126, 128,
 	130, 140]
 
-def get_iq_score(answers, age):
+def count_correct_answers(answers):
 	answered_correctly = 0
 	for i, answ in enumerate(answers):
 		if answ + 1 == CORRECT_ANSWERS[i]:
 			answered_correctly += 1
+	return answered_correctly
+
+def get_iq_score(answers, age):
+	answered_correctly = count_correct_answers(answers)
 	
 	base_score = SCORE_TO_IQ_MAP[answered_correctly] or 60
 	
@@ -40,14 +44,18 @@ def get_iq_score(answers, age):
 def create_result(tester_data):
 	result_id = get_new_cert_id()
 	age = tester_data["age"]
-	score = get_iq_score(tester_data["answers"], age)
+	answers = tester_data["answers"]
+	score = get_iq_score(answers, age)
 	submit_time = int(time.time())
 	user_name = tester_data["user_name"]
+	email = tester_data.get("email")
+	test_duration = tester_data.get("test_duration", 0)
+	correct_answers = count_correct_answers(answers)
 	# Show certificate result (tier 3) by default
 	result_tier = 3
 	
 	result_row = (result_id, score, age, submit_time,
-		None, user_name, result_tier)
+		None, user_name, result_tier, email, test_duration, correct_answers)
 	storage.save_result(result_row)
 	
 	return storage.get_result(result_id)
