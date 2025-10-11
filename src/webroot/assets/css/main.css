@@ -16,13 +16,13 @@ table{border-collapse:collapse;border-spacing:0}
 
 @keyframes blinking{
 	0% {
-		color: red;
+		color: var(--featured-color);
 	}
 	50% {
 		color: var(--text-color);
 	}
 	100% {
-		color: red;
+		color: var(--featured-color);
 	}
 }
 
@@ -66,15 +66,15 @@ html {
 }
 
 html.default-theme {
-	--background-color: #FFFBFC;
-	--secondary-bg-color: #e5e5e5;
-	--selected-color: #e5e5e5;
-	--main-color: #14213d;
-	--text-color: #14213d;
-	--featured-color: #0077b6;
-	--black-to-text-filter: invert(8%) sepia(51%) saturate(1848%) hue-rotate(200deg) brightness(99%) contrast(92%);;
-	--black-to-bg-filter: invert(100%) sepia(62%) saturate(587%) hue-rotate(287deg) brightness(100%) contrast(110%);
-	--black-to-featured-filter: invert(26%) sepia(98%) saturate(1797%) hue-rotate(181deg) brightness(94%) contrast(101%);
+	--background-color: #02010F;
+	--secondary-bg-color: #1a1926;
+	--selected-color: #2a2838;
+	--main-color: #D8EA0D;
+	--text-color: #FFFFFF;
+	--featured-color: #D8EA0D;
+	--black-to-text-filter: invert(100%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(100%) contrast(100%);
+	--black-to-bg-filter: invert(5%) sepia(10%) saturate(5000%) hue-rotate(200deg) brightness(95%) contrast(110%);
+	--black-to-featured-filter: invert(90%) sepia(50%) saturate(2000%) hue-rotate(30deg) brightness(100%) contrast(100%);
 }
 
 @media(max-width: 800px){
@@ -244,7 +244,7 @@ h2{
 
 small{
 	font-size: .78em;
-	color: gray;
+	color: rgba(255, 255, 255, 0.6);
 }
 
 img.replace-black{
@@ -288,7 +288,7 @@ header, footer{
 }
 
 header {
-	background: linear-gradient(180deg, rgba(255,251,252,1) 0%, rgba(255,251,252,1) 57%, rgba(255,251,252,0.31414572665003504) 92%, rgba(255,251,252,0) 100%);
+	background: linear-gradient(180deg, rgba(2,1,15,1) 0%, rgba(2,1,15,1) 57%, rgba(2,1,15,0.31414572665003504) 92%, rgba(2,1,15,0) 100%);
 }
 
 header .logo{
@@ -521,7 +521,7 @@ body.desktop .tester-page.intro.active{
 }
 
 .tester-page.intro .btn-panel{
-	background: linear-gradient(0deg, rgba(255,251,252,1) 0%, rgba(255,251,252,1) 57%, rgba(255,251,252,0.31414572665003504) 92%, rgba(255,251,252,0) 100%);
+	background: linear-gradient(0deg, rgba(2,1,15,1) 0%, rgba(2,1,15,1) 57%, rgba(2,1,15,0.31414572665003504) 92%, rgba(2,1,15,0) 100%);
 	position: sticky;
 	bottom: 0;
 	padding: 20px 0;
@@ -887,7 +887,7 @@ body.mobile .milestone-line .progressline{
 .test-info .set .set-progress .set-progress-line{
 	height: 100%;
 	width: 0%;
-	background: linear-gradient(180deg, rgba(20,33,61,1) 0%, rgba(20,33,61,1) 12%, rgba(20,33,61,0) 100%);
+	background: linear-gradient(180deg, rgba(216,234,13,1) 0%, rgba(216,234,13,1) 12%, rgba(216,234,13,0) 100%);
 	transition-property: width;
 	transition-duration: 100ms;
 	transition-timing-function: linear;
@@ -1206,12 +1206,12 @@ button.finish .icon{
 .result-submission .result-card h3{
 	font-size: 2rem;
 	margin-bottom: 20px;
-	color: #333;
+	color: var(--text-color);
 }
 
 .result-submission .result-card p{
 	font-size: 1.1rem;
-	color: #666;
+	color: rgba(255, 255, 255, 0.8);
 	margin-bottom: 30px;
 	line-height: 1.6;
 }
@@ -1324,7 +1324,7 @@ button.finish .icon{
 
 .payment-options .payment-option .description{
 	font-size: .78em;
-	color: gray;
+	color: rgba(255, 255, 255, 0.6);
 	line-height: 115%;
 	height: 60px;
 	margin: 0 15px;
@@ -1515,7 +1515,7 @@ button.finish .icon{
 	opacity: 0;
 	width: 100%;
 	transform: translateY(-50%);
-	color: white;
+	color: var(--text-color);
 	font-weight: 400;
 	z-index: 1;
 	font-size: 2rem;
