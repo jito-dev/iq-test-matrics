@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  cognitive-tests-local:
+    # Build the image from the Dockerfile in the current directory
+    build: .
+    container_name: cognitive-tests-local
+    
+    # Map container port 8001 to host port 8001 for local access.
+    ports:
+      - "8001:8001"
+
+    # Volume syncs your local code changes instantly into the container.
+    volumes:
+        - .:/usr/src/app
+      
+    # Use the .env file
+    env_file:
+      - .env
