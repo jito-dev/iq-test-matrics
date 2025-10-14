@@ -1,5 +1,7 @@
 "use strict";
 
+const urlParams = new URLSearchParams(window.location.search); // for campaigns
+
 class Tester{
 	constructor(){
 		this.last_answered = -1;
@@ -728,12 +730,15 @@ class Tester{
 	async fill_result_cookie(){
 		const finish_time = Math.floor(Date.now() / 1000);
 		const test_duration = finish_time - this.started_at;
+		const current_campaign_slug = urlParams.get('campaign_slug');
 		
 		const data = {
 			answers: this.answers,
 			email: await this.user_email,
 			age: await this.user_age,
 			user_name: await this.user_name,
+			// Modification for campaigns: Add campaign_slug
+			campaign_slug: current_campaign_slug,
 			test_duration: test_duration
 		}
 		document.cookie = "tester_data=" + 

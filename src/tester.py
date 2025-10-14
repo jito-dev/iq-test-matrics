@@ -42,23 +42,29 @@ def get_iq_score(answers, age):
 	return score
 
 def create_result(tester_data):
-	result_id = get_new_cert_id()
-	age = tester_data["age"]
-	answers = tester_data["answers"]
-	score = get_iq_score(answers, age)
-	submit_time = int(time.time())
-	user_name = tester_data["user_name"]
-	email = tester_data.get("email")
-	test_duration = tester_data.get("test_duration", 0)
-	correct_answers = count_correct_answers(answers)
-	# Show certificate result (tier 3) by default
-	result_tier = 3
-	
-	result_row = (result_id, score, age, submit_time,
-		None, user_name, result_tier, email, test_duration, correct_answers)
-	storage.save_result(result_row)
-	
-	return storage.get_result(result_id)
+    result_id = get_new_cert_id()
+    age = tester_data["age"]
+    answers = tester_data["answers"]
+    score = get_iq_score(answers, age)
+    submit_time = int(time.time())
+    user_name = tester_data["user_name"]
+    email = tester_data.get("email")
+    test_duration = tester_data.get("test_duration", 0)
+    correct_answers = count_correct_answers(answers)
+    # Show certificate result (tier 3) by default
+    result_tier = 3
+    
+    # MODIFICATION 1: Extract the new 'campaign_slug'
+    campaign_slug = tester_data.get("campaign_slug") 
+    
+    # MODIFICATION 2: result_row now has 11 elements
+    result_row = (result_id, score, age, submit_time,
+        None, user_name, result_tier, email, test_duration, correct_answers,
+        campaign_slug) # <-- 11th element added
+        
+    storage.save_result(result_row)
+    
+    return storage.get_result(result_id)
 
 
 def get_new_cert_id():

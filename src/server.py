@@ -3,6 +3,10 @@ from pathlib import Path
 from urllib.parse import unquote
 import tester, json, os, storage, traceback, hashlib, secrets
 import dotenv
+import math # Added for math.erf
+import datetime # Added for date formatting
+import csv # Added for CSV generation
+from io import StringIO # Added for in-memory CSV generation
 
 base_dir = Path(__file__).parent
 webroot = base_dir / "webroot"
@@ -182,16 +186,134 @@ def admin_delete_result(result_id):
 		print(traceback.format_exc())
 		return json.dumps({"success": False})
 
+# Global helper for CSV reuse (since local copy is kept in admin_panel)
+def calculate_iq_percentile(iq_score):
+    """Calculate percentile based on normal distribution of IQ scores"""
+    mean = 100
+    std_dev = 15
+    
+    # Calculate z-score
+    z_score = (iq_score - mean) / std_dev
+    
+    # Calculate cumulative probability using error function
+    percentile = 0.5 * (1 + math.erf(z_score / math.sqrt(2)))
+    # Invert: 100% - percentile to show top percentage
+    return 100 - (percentile * 100)
+
+@route("/admin/download_csv")
+def admin_download_csv():
+	require_admin()
+
+	campaign_filter_slug = request.query.get('campaign_slug')
+
+	all_results = storage.get_all_results()
+	campaigns = storage.get_campaigns()
+	slug_to_name = {c['slug']: c['name'] for c in campaigns}
+	slug_to_campaign = {c['slug']: c for c in campaigns}
+
+	results = []
+	for result in all_results:
+		# Map campaign slug to name and add percentile
+		campaign_slug = result.get("campaign_slug")
+		campaign_name = slug_to_name.get(campaign_slug, "Direct/Untagged")
+		
+		# Filtering logic
+		if campaign_filter_slug and campaign_filter_slug != "all":
+			if campaign_filter_slug == "untagged":
+				if campaign_name != "Direct/Untagged":
+					continue
+			elif campaign_slug != campaign_filter_slug:
+				continue
+
+		result["campaign_name"] = campaign_name
+
+		if result["score"]:
+			# Use the global helper
+			percentile = calculate_iq_percentile(result["score"])
+			result["percentile"] = round(percentile, 1)
+		else:
+			result["percentile"] = "N/A"
+			
+		# Format dates and durations
+		result["date_time_formatted"] = datetime.datetime.fromtimestamp(
+			result.get("submit_time", 0)
+		).strftime("%Y-%m-%d %H:%M:%S") if result.get("submit_time") else "N/A"
+
+		test_duration = result.get("test_duration")
+		result["duration_formatted"] = f"{test_duration // 60}m {test_duration % 60}s" if test_duration else "N/A"
+
+		result["correct_answers_formatted"] = f"{result.get('correct_answers', 'N/A')} from 60" if result.get('correct_answers') is not None else "N/A"
+
+		results.append(result)
+
+	# In-memory file for CSV generation
+	output = StringIO()
+	writer = csv.writer(output)
+
+	# 1. Write Header
+	header = [
+		"ID", "Email", "Name", "Date & Time", "IQ Score", 
+		"Test Duration (seconds)", "Correct Answers", "Campaign Name", 
+		"Campaign Slug", "Percentile", "Result Tier"
+	]
+	writer.writerow(header)
+
+	# 2. Write Data Rows
+	for result in results:
+		
+		row = [
+			# Ensure ID is always treated as a string
+			str(result.get("id", "N/A")),
+			result.get("email", "N/A"),
+			result.get("user_name", "N/A"),
+			result["date_time_formatted"],
+			result.get("score", "N/A"),
+			result.get("test_duration", "N/A"), # Raw seconds for easy analysis
+			result["correct_answers_formatted"],
+			result["campaign_name"],
+			result.get("campaign_slug", "untagged"),
+			result["percentile"],
+			result.get("result_tier", "N/A")
+		]
+		writer.writerow(row)
+
+	# Logic for filename generation
+	if campaign_filter_slug and campaign_filter_slug != "all":
+		if campaign_filter_slug == "untagged":
+			campaign_name_for_file = "Direct_Untagged"
+		elif campaign_filter_slug in slug_to_campaign:
+			# Use the campaign name, replace spaces with underscores
+			campaign_name = slug_to_campaign[campaign_filter_slug]['name']
+			campaign_name_for_file = campaign_name.replace(" ", "_")
+		else:
+			campaign_name_for_file = "filtered_results"
+	else:
+		campaign_name_for_file = "all_results"
+
+	response.content_type = 'text/csv'
+	response.set_header(
+		'Content-Disposition', 
+		f'attachment; filename="test_results_{campaign_name_for_file}_{datetime.date.today()}.csv"'
+	)
+
+	return output.getvalue()
+
+
 @route("/admin")
 def admin_panel():
 	require_admin()
 	
 	results = storage.get_all_results()
 	
+    # Fetch and map campaigns
+	campaigns = storage.get_campaigns() # Assuming this function exists and returns [{"slug": "...", "name": "..."}]
+	slug_to_name = {c['slug']: c['name'] for c in campaigns}
+    
 	# Calculate percentiles based on IQ distribution
 	# IQ follows normal distribution: mean=100, std_dev=15
-	import math
+	# import math # math is now imported globally
 	
+    # Local helper function is kept here, as requested not to change existing code
 	def calculate_iq_percentile(iq_score):
 		"""Calculate percentile based on normal distribution of IQ scores"""
 		mean = 100
@@ -213,15 +335,41 @@ def admin_panel():
 			result["percentile"] = round(percentile, 1)
 		else:
 			result["percentile"] = "N/A"
-	
+            
+        # Add campaign name to result dictionary
+		campaign_slug = result.get("campaign_slug")
+		if campaign_slug and campaign_slug in slug_to_name:
+			result["campaign_name"] = slug_to_name[campaign_slug] # Display NAME
+		else:
+			result["campaign_name"] = "Direct/Untagged"
+        
+	# Sort results by Campaign Name for Grouping
+	results.sort(key=lambda r: r["campaign_name"])
+
 	# Generate HTML table
 	rows_html = ""
+	last_campaign_name = None # Variable to track grouping
+    
 	for result in results:
-		import datetime
+        # Add Grouping Header
+		current_campaign_name = result["campaign_name"]
+		if current_campaign_name != last_campaign_name:
+            # colspan="9" because the table has 9 columns (Email to Actions)
+			rows_html += f'''
+            <tr class="campaign-group-header">
+                <td colspan="9"><h2>Campaign: {current_campaign_name}</h2></td>
+            </tr>
+            '''
+			last_campaign_name = current_campaign_name
+        
+		# import datetime # datetime is now imported globally
 		date_time = datetime.datetime.fromtimestamp(result["submit_time"]).strftime("%Y-%m-%d %H:%M:%S") if result["submit_time"] else "N/A"
 		test_duration_str = f"{result['test_duration'] // 60}m {result['test_duration'] % 60}s" if result["test_duration"] else "N/A"
-		correct_answers_str = f"{result.get('correct_answers', 'N/A')} из 60" if result.get('correct_answers') is not None else "N/A"
+		correct_answers_str = f"{result.get('correct_answers', 'N/A')} from 60" if result.get('correct_answers') is not None else "N/A"
 		
+        # Use the campaign_name we stored in the result dict
+		campaign_display = result["campaign_name"] 
+        
 		rows_html += f'''
 		<tr data-id="{result.get("id", "")}">
 			<td>{result.get("email", "N/A")}</td>
@@ -229,12 +377,19 @@ def admin_panel():
 			<td>{date_time}</td>
 			<td>{result.get("score", "N/A")}</td>
 			<td>{test_duration_str}</td>
-			<td>{correct_answers_str}</td>
-			<td>{result.get("percentile", "N/A")}%</td>
-			<td><button class="delete-btn" data-id="{result.get("id", "")}">Удалить</button></td>
+            <td>{correct_answers_str}</td>
+            <td>{campaign_display}</td>  <td>{result.get("percentile", "N/A")}%</td>
+			<td><button class="delete-btn" data-id="{result.get("id", "")}">Delete</button></td>
 		</tr>
 		'''
 	
+    # Campaign filter options for the UI
+	campaign_options_html = '<option value="all">All Campaigns</option>'
+	campaign_options_html += '<option value="untagged">Direct/Untagged</option>'
+	
+	for campaign in campaigns:
+		campaign_options_html += f'<option value="{campaign["slug"]}">{campaign["name"]}</option>' 
+        
 	return f'''
 	<!DOCTYPE html>
 	<html>
@@ -332,12 +487,55 @@ def admin_panel():
 				font-weight: bold;
 				color: #667eea;
 			}}
+            /* Campaign Grouping Style */
+            .campaign-group-header td {{
+                background: #e0e7ff !important; 
+                font-weight: bold;
+                padding: 15px 12px;
+                border-top: 2px solid #667eea;
+                border-bottom: none;
+            }}
+            .campaign-group-header h2 {{
+                margin: 0;
+                font-size: 1.2em;
+                color: #333;
+            }}
+            /* CSV Download Section Styles */
+            .csv-download-container {{
+                background: white;
+                padding: 15px 20px;
+                border-radius: 10px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                margin-bottom: 20px;
+                display: flex;
+                align-items: center;
+                gap: 15px;
+            }}
+            .csv-download-container select, .csv-download-container button {{
+                padding: 10px;
+                border-radius: 5px;
+                border: 1px solid #ddd;
+            }}
+            .csv-download-container select {{
+                width: 300px;
+            }}
+            .csv-download-container button {{
+                background: #4CAF50;
+                color: white;
+                cursor: pointer;
+                border: none;
+            }}
+            .csv-download-container button:hover {{
+                background: #45a049;
+            }}
 		</style>
 	</head>
 	<body>
 		<div class="header">
 			<h1>Test Results Dashboard</h1>
-			<a href="/admin/logout" class="logout-btn">Logout</a>
+			<div>
+				<a href="/admin/campaigns" class="logout-btn">Campaigns</a> <a href="/admin/logout" class="logout-btn">Logout</a>
+			</div>
 		</div>
 		
 		<div class="stats">
@@ -355,6 +553,14 @@ def admin_panel():
 			</div>
 		</div>
 		
+        <div class="csv-download-container">
+            <h3>Download Results as CSV:</h3>
+            <select id="campaign-select">
+                {campaign_options_html}
+            </select>
+            <button id="download-csv-btn">Download CSV</button>
+        </div>
+
 		<div class="container">
 			<table>
 				<thead>
@@ -365,6 +571,7 @@ def admin_panel():
 						<th>IQ Score</th>
 						<th>Test Duration</th>
 						<th>Correct Answers</th>
+						<th>Campaign</th>
 						<th>Percentile</th>
 						<th>Actions</th>
 					</tr>
@@ -375,6 +582,18 @@ def admin_panel():
 			</table>
 		</div>
 		<script>
+            // CSV Download Script
+            document.getElementById('download-csv-btn').addEventListener('click', function() {{
+                const campaignSlug = document.getElementById('campaign-select').value;
+                let url = '/admin/download_csv';
+                
+                if (campaignSlug && campaignSlug !== 'all') {{
+                    url += `?campaign_slug=${{campaignSlug}}`;
+                }}
+                
+                window.location.href = url;
+            }});
+
 			document.querySelectorAll('.delete-btn').forEach(btn => {{
 				btn.addEventListener('click', async function() {{
 					if(!confirm('Are you sure you want to delete this record?')) {{
@@ -408,8 +627,31 @@ def admin_panel():
 	'''
 
 @route("/")
-def index():
-	return static_file("index.html", root=webroot)
+def index_redirect():
+	# Redirects all traffic from the root to a 404/not found page 
+	# or an informational page, enforcing campaign-only access.
+	response.status = 404
+	return "Test link not found. Please use a valid campaign link."
+
+# New route for campaign access
+@route("/<campaign_slug>")
+def campaign_access(campaign_slug):
+	# Check if the slug is a campaign
+	campaign = storage.get_campaign_by_slug(campaign_slug)
+	
+	if campaign:
+		# Redirect to the index page with the campaign slug
+		return redirect(f"/index.html?campaign_slug={campaign_slug}")
+	
+	# Fallback for static files or non-campaign URLs
+	# This should be handled by the generic static route, but adding a check here for clarity
+	
+	# Check if it's a known static file before returning 404
+	if (webroot / campaign_slug).exists():
+		return static_file(campaign_slug, root=webroot)
+
+	response.status = 404
+	return "Test link or page not found."
 
 @route("/<filepath:path>")
 def static(filepath):
@@ -419,6 +661,8 @@ def static(filepath):
 def submit_result():
 	tester_data_str = unquote(request.get_cookie("tester_data"))
 	tester_data = json.loads(tester_data_str)
+	print(tester_data)
+
 	result = None
 	try:
 		result = tester.create_result(tester_data)
@@ -497,6 +741,290 @@ def submit_result():
 		if admin_contact:
 			error_msg += f" If error persists, contact <b>{admin_contact}</b>"
 		return error_msg
+	
+
+@route("/admin/campaigns")
+def admin_campaigns_panel():
+	require_admin()
+	
+	campaigns = storage.get_campaigns() # Assume this returns a list of {"slug": ..., "name": ...}
+	
+	campaigns_html = ""
+	for campaign in campaigns:
+		campaign_url = f"{request.urlparts.scheme}://{request.urlparts.netloc}/{campaign['slug']}"
+		campaigns_html += f'''
+		<tr data-slug="{campaign['slug']}">
+			<td>{campaign.get("name", "N/A")}</td>
+			<td class="link-cell">
+                <span id="link-{campaign['slug']}"><a href="{campaign_url}" target="_blank">{campaign_url}</a></span>
+                <button class="copy-link-btn" data-link="{campaign_url}">Copy</button>
+            </td>
+			<td><button class="delete-campaign-btn" data-slug="{campaign['slug']}">Delete</button></td>
+		</tr>
+		'''
+	
+	return f'''
+	<!DOCTYPE html>
+	<html>
+	<head>
+		<title>Admin Panel - Campaigns</title>
+		<style>
+			body {{
+				font-family: 'Roboto', 'Lato', sans-serif;
+				margin: 0;
+				padding: 20px;
+				background: #f5f5f5;
+			}}
+			.header {{
+				background: white;
+				padding: 20px;
+				margin-bottom: 20px;
+				border-radius: 10px;
+				box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			}}
+			h1 {{
+				margin: 0;
+				color: #333;
+			}}
+			.logout-btn {{
+				padding: 10px 20px;
+				background: #667eea;
+				color: white;
+				border: none;
+				border-radius: 5px;
+				cursor: pointer;
+				text-decoration: none;
+			}}
+			.logout-btn:hover {{
+				background: #5568d3;
+			}}
+			.container {{
+				background: white;
+				padding: 20px;
+				border-radius: 10px;
+				box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+				overflow-x: auto;
+				margin-bottom: 20px;
+			}}
+			table {{
+				width: 100%;
+				border-collapse: collapse;
+			}}
+			th {{
+				background: #667eea;
+				color: white;
+				padding: 12px;
+				text-align: left;
+				font-weight: 500;
+			}}
+			td {{
+				padding: 12px;
+				border-bottom: 1px solid #eee;
+			}}
+			tr:hover {{
+				background: #f9f9f9;
+			}}
+			.delete-campaign-btn {{
+				padding: 6px 12px;
+				background: #ff4444;
+				color: white;
+				border: none;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 12px;
+			}}
+			.delete-campaign-btn:hover {{
+				background: #cc0000;
+			}}
+			.create-form input[type="text"] {{
+				padding: 10px;
+				margin-right: 10px;
+				border: 1px solid #ddd;
+				border-radius: 5px;
+				width: 250px;
+			}}
+			.create-form button {{
+				padding: 10px 20px;
+				background: #4CAF50;
+				color: white;
+				border: none;
+				border-radius: 5px;
+				cursor: pointer;
+			}}
+			.create-form button:hover {{
+				background: #45a049;
+			}}
+            /* Copy Button */
+            .link-cell {{
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }}
+            .copy-link-btn {{
+				padding: 6px 12px;
+				background: #667eea;
+				color: white;
+				border: none;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 12px;
+                flex-shrink: 0;
+            }}
+            .copy-link-btn:hover {{
+				background: #5568d3;
+            }}
+		</style>
+	</head>
+	<body>
+		<div class="header">
+			<h1>Campaign Links</h1>
+			<div>
+				<a href="/admin" class="logout-btn">Results</a>
+				<a href="/admin/logout" class="logout-btn">Logout</a>
+			</div>
+		</div>
+		
+		<div class="container">
+			<h2>Create New Campaign</h2>
+			<form id="create-campaign-form" class="create-form">
+				<input type="text" name="campaign_name" placeholder="Campaign Name (e.g., Spring Hiring 2024)" required>
+				<button type="submit">Create Link</button>
+			</form>
+		</div>
+
+		<div class="container">
+			<h2>Active Campaigns</h2>
+			<table>
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Link</th>
+						<th>Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					{campaigns_html}
+				</tbody>
+			</table>
+		</div>
+
+		<script>
+			// Handle Create Campaign
+			document.getElementById('create-campaign-form').addEventListener('submit', async function(e) {{
+				e.preventDefault();
+				const campaignName = this.campaign_name.value;
+				
+				try {{
+					const response = await fetch('/admin/campaigns', {{
+						method: 'POST',
+						headers: {{ 'Content-Type': 'application/json' }},
+						body: JSON.stringify({{ name: campaignName }})
+					}});
+					const data = await response.json();
+					
+					if(data.success) {{
+						alert('Campaign created successfully! Slug: ' + data.slug);
+						location.reload();
+					}} else {{
+						alert('Failed to create campaign: ' + data.message);
+					}}
+				}} catch(e) {{
+					alert('Error creating campaign: ' + e.message);
+				}}
+			}});
+
+			// Handle Delete Campaign
+			document.querySelectorAll('.delete-campaign-btn').forEach(btn => {{
+				btn.addEventListener('click', async function() {{
+					if(!confirm('Are you sure you want to delete this campaign? This will invalidate the link.')) {{
+						return;
+					}}
+					
+					const slug = this.dataset.slug;
+					
+					try {{
+						const response = await fetch(`/admin/campaigns/${{slug}}`, {{
+							method: 'DELETE'
+						}});
+						const data = await response.json();
+						
+						if(data.success) {{
+							document.querySelector(`tr[data-slug="${{slug}}"]`).remove();
+						}} else {{
+							alert('Failed to delete campaign');
+						}}
+					}} catch(e) {{
+						alert('Error deleting campaign: ' + e.message);
+					}}
+				}});
+			}});
+
+            // Handle Copy Link
+			document.querySelectorAll('.copy-link-btn').forEach(btn => {{
+				btn.addEventListener('click', function() {{
+					const linkToCopy = this.dataset.link;
+					
+					// Use the modern navigator.clipboard API
+					if (navigator.clipboard) {{
+						navigator.clipboard.writeText(linkToCopy).then(() => {{
+							// Provide visual feedback
+							this.textContent = 'Copied!';
+							setTimeout(() => {{
+								this.textContent = 'Copy';
+							}}, 1500);
+						}}).catch(err => {{
+							console.error('Failed to copy text: ', err);
+							alert('Failed to copy link. Please copy it manually.');
+						}});
+					}} else {{
+						// Fallback for older browsers
+						const tempInput = document.createElement('input');
+						tempInput.value = linkToCopy;
+						document.body.appendChild(tempInput);
+						tempInput.select();
+						document.execCommand('copy');
+						document.body.removeChild(tempInput);
+
+						this.textContent = 'Copied!';
+						setTimeout(() => {{
+							this.textContent = 'Copy';
+						}}, 1500);
+					}}
+				}});
+			}});
+		</script>
+	</body>
+	</html>
+	'''
+
+@route("/admin/campaigns", method="POST")
+def admin_create_campaign():
+	require_admin()
+	response.content_type = "application/json"
+	try:
+		data = request.json
+		name = data.get("name")
+		slug = secrets.token_hex(4) # Generate a short unique slug
+		
+		storage.create_campaign(slug, name) # Assume this saves to DB
+		return json.dumps({"success": True, "slug": slug})
+	except Exception:
+		print(traceback.format_exc())
+		return json.dumps({"success": False, "message": "Internal error"})
+
+@route("/admin/campaigns/<slug>", method="DELETE")
+def admin_delete_campaign(slug):
+	require_admin()
+	response.content_type = "application/json"
+	try:
+		storage.delete_campaign(slug) # Assume this deletes from DB
+		return json.dumps({"success": True})
+	except Exception:
+		print(traceback.format_exc())
+		return json.dumps({"success": False, "message": "Internal error"})
 
 def run_local():
 	run(host=os.environ["SERVER_HOST"], port=os.environ["SERVER_PORT"])
