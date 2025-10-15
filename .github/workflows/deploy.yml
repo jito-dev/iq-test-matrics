@@ -1,0 +1,25 @@
+name: CI/CD Docker Deployment for Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, docker-deploy-iq-test-matrics]
+    
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set Script Permissions
+        run: chmod +x ./stop-prod.sh ./deploy-prod.sh
+
+      - name: Stop, Rebuild, and Restart Docker Services
+        run: |
+          echo "Executing deployment via scripts..."
+          ./stop-prod.sh
+          ./deploy-prod.sh
+          echo "Deployment complete. Services are restarting."
