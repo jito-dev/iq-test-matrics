@@ -6,12 +6,15 @@ db_path = Path(__file__).parent / "tester.db"
 # --- Campaign Management Functions (New) ---
 
 def create_campaign(slug, name):
-    """Creates a new campaign link/tag."""
+    """Creates a new campaign link/tag. Returns True if created, False if duplicate name."""
     with DBAccess() as db:
-        # Campaign table has (slug TEXT PRIMARY KEY, name TEXT)
-        db.cursor.execute(
-            "INSERT INTO campaigns VALUES (?, ?)", (slug, name)
-        )
+        try:
+            db.cursor.execute(
+                "INSERT INTO campaigns VALUES (?, ?)", (slug, name)
+            )
+            return True
+        except sqlite3.IntegrityError:
+            return False
 
 def get_campaigns():
     """Fetches all campaigns."""
@@ -114,7 +117,7 @@ class DBAccess():
             
             # Create the campaigns table
             self.cursor.execute(
-                "CREATE TABLE campaigns (slug text PRIMARY KEY, name text)")
+                "CREATE TABLE campaigns (slug text PRIMARY KEY, name text UNIQUE)")
         else:
             # Migration: add new columns if they don't exist in results
             try:
@@ -136,11 +139,14 @@ class DBAccess():
             except:
                 pass
             
-            # NEW MIGRATION: create campaigns table if it doesn't exist
-            # Note: SQLite doesn't have IF NOT EXISTS for tables in old versions,
-            # but this check is usually fine or an explicit check can be done.
+            # NEW MIGRATION: create campaigns table if it doesn't exist, and add unique constraint to name
             try:
-                self.cursor.execute("CREATE TABLE campaigns (slug text PRIMARY KEY, name text)")
+                self.cursor.execute("CREATE TABLE campaigns (slug text PRIMARY KEY, name text UNIQUE)")
+            except:
+                pass
+            # Try to add unique constraint to name if missing (for legacy DBs)
+            try:
+                self.cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_campaign_name_unique ON campaigns(name)")
             except:
                 pass
     

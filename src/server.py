@@ -1,12 +1,17 @@
-from bottle import route, run, static_file, request, redirect, response, template
+from bottle import Bottle, run, static_file, request, redirect, response, template
+from beaker.middleware import SessionMiddleware # Added for session management
 from pathlib import Path
 from urllib.parse import unquote
 import tester, json, os, storage, traceback, hashlib, secrets
+from bottle import request as bottle_request
 import dotenv
-import math # Added for math.erf
+from math import erf, sqrt
 import datetime # Added for date formatting
 import csv # Added for CSV generation
 from io import StringIO # Added for in-memory CSV generation
+import threading
+import time
+from pathlib import Path
 
 base_dir = Path(__file__).parent
 webroot = base_dir / "webroot"
@@ -14,33 +19,43 @@ webroot = base_dir / "webroot"
 os.chdir(base_dir)
 dotenv.load_dotenv()
 
+session_opts = {
+	'session.type': 'file',
+	'session.cookie_expires': 86400,
+	'session.data_dir': str(base_dir / 'session_data'),
+	'session.auto': True
+}
+
+# Create a single Bottle app instance for all routes
+main_app = Bottle()
+app = SessionMiddleware(main_app, session_opts)
+
 # Admin credentials
 ADMIN_LOGIN = "root"
 ADMIN_PASSWORD = "1111"
 
-# Session storage (in production, use a proper session manager)
-admin_sessions = set()
-
-def generate_session_token():
-	return secrets.token_hex(32)
-
+# Session storage now handled by Beaker session middleware
 def check_admin_session():
-	session_token = request.get_cookie("admin_session")
-	return session_token in admin_sessions
+	session = bottle_request.environ.get('beaker.session')
+	return session and session.get('is_admin') is True
 
 def require_admin():
-	if not check_admin_session():
+	session = bottle_request.environ.get('beaker.session')
+	if not session or not session.get('is_admin'):
 		redirect("/admin/login")
 
-@route("/result/<result_id>")
+	session = bottle_request.environ.get('beaker.session')
+	return session.get('is_admin') is True
+
+@main_app.route("/result/<result_id>")
 def show_result(result_id):
 	return on_result_open(None, result_id)
 
-@route("/result/tier-<tier:int>/<result_id>")
+@main_app.route("/result/tier-<tier:int>/<result_id>")
 def show_result(tier, result_id):
 	return on_result_open(tier, result_id)
 
-@route("/cert/<result_id>")
+@main_app.route("/cert/<result_id>")
 def generate_cert(result_id):
 	result = storage.get_result(result_id)
 	if result["result_tier"] != 3:
@@ -61,7 +76,7 @@ def on_result_open(tier, result_id):
 	response.status = status
 	return body
 
-@route("/check_email", method="POST")
+@main_app.route("/check_email", method="POST")
 def check_email():
 	response.content_type = "application/json"
 	try:
@@ -73,7 +88,7 @@ def check_email():
 		print(traceback.format_exc())
 		return json.dumps({"exists": False})
 
-@route("/admin/login")
+@main_app.route("/admin/login")
 def admin_login_page():
 	if check_admin_session():
 		redirect("/admin")
@@ -155,28 +170,25 @@ def admin_login_page():
 	</html>
 	'''
 
-@route("/admin/login", method="POST")
+@main_app.route("/admin/login", method="POST")
 def admin_login():
 	login = request.forms.get("login")
 	password = request.forms.get("password")
-	
+	session = bottle_request.environ.get('beaker.session')
 	if login == ADMIN_LOGIN and password == ADMIN_PASSWORD:
-		session_token = generate_session_token()
-		admin_sessions.add(session_token)
-		response.set_cookie("admin_session", session_token, max_age=86400, httponly=True)
+		session['is_admin'] = True
+		session.save()
 		redirect("/admin")
 	else:
 		redirect("/admin/login?error=1")
 
-@route("/admin/logout")
+@main_app.route("/admin/logout")
 def admin_logout():
-	session_token = request.get_cookie("admin_session")
-	if session_token in admin_sessions:
-		admin_sessions.remove(session_token)
-	response.delete_cookie("admin_session")
+	session = bottle_request.environ.get('beaker.session')
+	session.delete()
 	redirect("/admin/login")
 
-@route("/admin/delete/<result_id>", method="POST")
+@main_app.route("/admin/delete/<result_id>", method="POST")
 def admin_delete_result(result_id):
 	require_admin()
 	try:
@@ -196,11 +208,11 @@ def calculate_iq_percentile(iq_score):
     z_score = (iq_score - mean) / std_dev
     
     # Calculate cumulative probability using error function
-    percentile = 0.5 * (1 + math.erf(z_score / math.sqrt(2)))
+    percentile = 0.5 * (1 + erf(z_score / sqrt(2)))
     # Invert: 100% - percentile to show top percentage
     return 100 - (percentile * 100)
 
-@route("/admin/download_csv")
+@main_app.route("/admin/download_csv")
 def admin_download_csv():
 	require_admin()
 
@@ -299,7 +311,7 @@ def admin_download_csv():
 	return output.getvalue()
 
 
-@route("/admin")
+@main_app.route("/admin")
 def admin_panel():
 	require_admin()
 	
@@ -311,7 +323,6 @@ def admin_panel():
     
 	# Calculate percentiles based on IQ distribution
 	# IQ follows normal distribution: mean=100, std_dev=15
-	# import math # math is now imported globally
 	
     # Local helper function is kept here, as requested not to change existing code
 	def calculate_iq_percentile(iq_score):
@@ -324,7 +335,7 @@ def admin_panel():
 		
 		# Calculate cumulative probability using error function
 		# This gives us the percentile
-		percentile = 0.5 * (1 + math.erf(z_score / math.sqrt(2)))
+		percentile = 0.5 * (1 + erf(z_score / sqrt(2)))
 		# Invert: 100% - percentile to show top percentage
 		return 100 - (percentile * 100)
 	
@@ -626,7 +637,7 @@ def admin_panel():
 	</html>
 	'''
 
-@route("/")
+@main_app.route("/")
 def index_redirect():
 	# Redirects all traffic from the root to a 404/not found page 
 	# or an informational page, enforcing campaign-only access.
@@ -634,7 +645,7 @@ def index_redirect():
 	return "Test link not found. Please use a valid campaign link."
 
 # New route for campaign access
-@route("/<campaign_slug>")
+@main_app.route("/<campaign_slug>")
 def campaign_access(campaign_slug):
 	# Check if the slug is a campaign
 	campaign = storage.get_campaign_by_slug(campaign_slug)
@@ -653,15 +664,14 @@ def campaign_access(campaign_slug):
 	response.status = 404
 	return "Test link or page not found."
 
-@route("/<filepath:path>")
+@main_app.route("/<filepath:path>")
 def static(filepath):
 	return static_file(filepath, root=webroot)
 
-@route("/submit_result", method="POST")
+@main_app.route("/submit_result", method="POST")
 def submit_result():
 	tester_data_str = unquote(request.get_cookie("tester_data"))
 	tester_data = json.loads(tester_data_str)
-	print(tester_data)
 
 	result = None
 	try:
@@ -742,8 +752,7 @@ def submit_result():
 			error_msg += f" If error persists, contact <b>{admin_contact}</b>"
 		return error_msg
 	
-
-@route("/admin/campaigns")
+@main_app.route("/admin/campaigns")
 def admin_campaigns_panel():
 	require_admin()
 	
@@ -1000,7 +1009,7 @@ def admin_campaigns_panel():
 	</html>
 	'''
 
-@route("/admin/campaigns", method="POST")
+@main_app.route("/admin/campaigns", method="POST")
 def admin_create_campaign():
 	require_admin()
 	response.content_type = "application/json"
@@ -1008,14 +1017,15 @@ def admin_create_campaign():
 		data = request.json
 		name = data.get("name")
 		slug = secrets.token_hex(4) # Generate a short unique slug
-		
-		storage.create_campaign(slug, name) # Assume this saves to DB
+		created = storage.create_campaign(slug, name)
+		if not created:
+			return json.dumps({"success": False, "message": "Campaign name must be unique."})
 		return json.dumps({"success": True, "slug": slug})
 	except Exception:
 		print(traceback.format_exc())
 		return json.dumps({"success": False, "message": "Internal error"})
 
-@route("/admin/campaigns/<slug>", method="DELETE")
+@main_app.route("/admin/campaigns/<slug>", method="DELETE")
 def admin_delete_campaign(slug):
 	require_admin()
 	response.content_type = "application/json"
@@ -1027,4 +1037,26 @@ def admin_delete_campaign(slug):
 		return json.dumps({"success": False, "message": "Internal error"})
 
 def run_local():
-	run(host=os.environ["SERVER_HOST"], port=os.environ["SERVER_PORT"])
+	run(app=app, host=os.environ["SERVER_HOST"], port=os.environ["SERVER_PORT"])
+
+def cleanup_sessions_periodically(session_dir, max_age_seconds=86400):
+	"""Delete session files older than max_age_seconds in session_dir once per day."""
+	def cleanup():
+		while True:
+			now = time.time()
+			if not session_dir.exists():
+				time.sleep(86400)
+				continue
+			for f in (session_dir / 'container_file').iterdir():
+				try:
+					if f.is_file() and (now - f.stat().st_mtime) > max_age_seconds:
+						f.unlink()
+				except Exception:
+					pass
+			# Sleep for 24 hours
+			time.sleep(86400)
+	t = threading.Thread(target=cleanup, daemon=True)
+	t.start()
+
+# Start session cleanup thread at startup
+cleanup_sessions_periodically(base_dir / 'session_data')
