@@ -9,17 +9,23 @@ jobs:
   deploy:
     runs-on: [self-hosted, docker-deploy-iq-test-matrics]
     
+    env:
+      DEPLOY_DIR: ${{ secrets.DEPLOY_SCRIPT_PATH }}  # Access the path from a GitHub Secret
+
     steps:
-
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions:checkout@v4
 
-      - name: Set Script Permissions
-        run: chmod +x ./stop-prod.sh ./deploy-prod.sh
-
-      - name: Stop, Rebuild, and Restart Docker Services
+      - name: Set Script Permissions and Run Deployment
         run: |
+          echo "Deployment Directory: $DEPLOY_DIR"
+          
+          # 1. Set Permissions
+          chmod +x $DEPLOY_DIR/stop-prod.sh
+          chmod +x $DEPLOY_DIR/deploy-prod.sh
+          
           echo "Executing deployment via scripts..."
-          ./stop-prod.sh
-          ./deploy-prod.sh
+          $DEPLOY_DIR/stop-prod.sh
+          $DEPLOY_DIR/deploy-prod.sh
+          
           echo "Deployment complete. Services are restarting."
