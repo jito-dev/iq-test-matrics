@@ -214,10 +214,6 @@ cd src
 gunicorn -w 4 -b 0.0.0.0:8080 bottle_app:app
 ```
 
-## License
-
-This project is licensed under a proprietary license. All rights reserved.
-
 ## Support
 
 For issues or questions:
