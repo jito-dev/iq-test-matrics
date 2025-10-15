@@ -1,3 +1,4 @@
-bottle
-python-dotenv
-pillow
+Beaker==1.13.0
+bottle==0.13.4
+pillow==11.3.0
+python-dotenv==1.1.1

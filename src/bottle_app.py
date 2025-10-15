@@ -1,4 +1,4 @@
 from bottle import default_app
-import server
+from server import app
 
-application = default_app()
+application = app
