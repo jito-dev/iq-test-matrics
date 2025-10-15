@@ -10,11 +10,12 @@ jobs:
     runs-on: [self-hosted, docker-deploy-iq-test-matrics]
     
     env:
-      DEPLOY_DIR: ${{ secrets.DEPLOY_SCRIPT_PATH }}  # Access the path from a GitHub Secret
+      DEPLOY_DIR: ${{ secrets.DEPLOY_SCRIPT_PATH }} # Access the path from a GitHub Secret
 
     steps:
       - name: Checkout Code
-        uses: actions:checkout@v4
+        # Changed 'actions:checkout@v4' to 'actions/checkout@v4'
+        uses: actions/checkout@v4
 
       - name: Set Script Permissions and Run Deployment
         run: |
@@ -24,6 +25,7 @@ jobs:
           chmod +x $DEPLOY_DIR/stop-prod.sh
           chmod +x $DEPLOY_DIR/deploy-prod.sh
           
+          # 2. Run Deployment
           echo "Executing deployment via scripts..."
           $DEPLOY_DIR/stop-prod.sh
           $DEPLOY_DIR/deploy-prod.sh
