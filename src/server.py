@@ -31,8 +31,8 @@ main_app = Bottle()
 app = SessionMiddleware(main_app, session_opts)
 
 # Admin credentials
-ADMIN_LOGIN = "root"
-ADMIN_PASSWORD = "1111"
+ADMIN_LOGIN = os.environ["ADMIN_LOGIN"]
+ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
 
 # Session storage now handled by Beaker session middleware
 def check_admin_session():
@@ -198,6 +198,18 @@ def admin_delete_result(result_id):
 		print(traceback.format_exc())
 		return json.dumps({"success": False})
 
+@main_app.route("/admin/campaigns/<slug>/toggle", method="POST")
+def admin_toggle_campaign_enabled(slug):
+	require_admin()
+	response.content_type = "application/json"
+	try:
+		data = request.json
+		enabled = int(data.get("enabled", 1))
+		storage.set_campaign_enabled(slug, enabled)
+		return json.dumps({"success": True})
+	except Exception:
+		print(traceback.format_exc())
+		return json.dumps({"success": False, "message": "Internal error"})
 # Global helper for CSV reuse (since local copy is kept in admin_panel)
 def calculate_iq_percentile(iq_score):
     """Calculate percentile based on normal distribution of IQ scores"""
@@ -649,18 +661,17 @@ def index_redirect():
 def campaign_access(campaign_slug):
 	# Check if the slug is a campaign
 	campaign = storage.get_campaign_by_slug(campaign_slug)
-	
 	if campaign:
+		if not campaign.get("enabled", True):
+			response.status = 403
+			return "This campaign is currently disabled."
 		# Redirect to the index page with the campaign slug
 		return redirect(f"/index.html?campaign_slug={campaign_slug}")
-	
 	# Fallback for static files or non-campaign URLs
 	# This should be handled by the generic static route, but adding a check here for clarity
-	
 	# Check if it's a known static file before returning 404
 	if (webroot / campaign_slug).exists():
 		return static_file(campaign_slug, root=webroot)
-
 	response.status = 404
 	return "Test link or page not found."
 
@@ -756,19 +767,25 @@ def submit_result():
 def admin_campaigns_panel():
 	require_admin()
 	
-	campaigns = storage.get_campaigns() # Assume this returns a list of {"slug": ..., "name": ...}
-	
+	campaigns = storage.get_campaigns() # Now returns {slug, name, enabled}
 	campaigns_html = ""
 	for campaign in campaigns:
 		campaign_url = f"{request.urlparts.scheme}://{request.urlparts.netloc}/{campaign['slug']}"
+		enabled = campaign.get("enabled", True)
+		link_style = '' if enabled else 'style="pointer-events:none;opacity:0.5;text-decoration:line-through;"'
+		btn_text = 'Disable' if enabled else 'Enable'
+		btn_class = 'toggle-enable-btn' + ('' if enabled else ' disabled-campaign')
 		campaigns_html += f'''
 		<tr data-slug="{campaign['slug']}">
 			<td>{campaign.get("name", "N/A")}</td>
 			<td class="link-cell">
-                <span id="link-{campaign['slug']}"><a href="{campaign_url}" target="_blank">{campaign_url}</a></span>
-                <button class="copy-link-btn" data-link="{campaign_url}">Copy</button>
-            </td>
-			<td><button class="delete-campaign-btn" data-slug="{campaign['slug']}">Delete</button></td>
+				<span id="link-{campaign['slug']}"><a href="{campaign_url}" target="_blank" {link_style}>{campaign_url}</a></span>
+				<button class="copy-link-btn" data-link="{campaign_url}">Copy</button>
+			</td>
+			<td>
+				<button class="{btn_class}" data-slug="{campaign['slug']}" data-enabled="{int(enabled)}">{btn_text}</button>
+				<button class="delete-campaign-btn" data-slug="{campaign['slug']}">Delete</button>
+			</td>
 		</tr>
 		'''
 	
@@ -885,6 +902,23 @@ def admin_campaigns_panel():
             .copy-link-btn:hover {{
 				background: #5568d3;
             }}
+			.toggle-enable-btn {{
+				padding: 6px 12px;
+				background: #ffa500;
+				color: white;
+				border: none;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 12px;
+				margin-right: 8px;
+			}}
+			.toggle-enable-btn.disabled-campaign {{
+				background: #aaa;
+			}}
+			.link-cell a[style*="line-through"] {{
+				text-decoration: line-through;
+				color: #888;
+			}}
 		</style>
 	</head>
 	<body>
@@ -921,6 +955,30 @@ def admin_campaigns_panel():
 		</div>
 
 		<script>
+			// Handle Enable/Disable Campaign
+			document.querySelectorAll('.toggle-enable-btn').forEach(btn => {{
+				btn.addEventListener('click', async function() {{
+					const slug = this.dataset.slug;
+					const currentlyEnabled = this.dataset.enabled === '1';
+					const newEnabled = currentlyEnabled ? 0 : 1;
+					try {{
+						const response = await fetch(`/admin/campaigns/${{slug}}/toggle`, {{
+							method: 'POST',
+							headers: {{ 'Content-Type': 'application/json' }},
+							body: JSON.stringify({{ enabled: newEnabled }})
+						}});
+						const data = await response.json();
+						if(data.success) {{
+							location.reload();
+						}} else {{
+							alert('Failed to update campaign status');
+						}}
+					}} catch(e) {{
+						alert('Error updating campaign: ' + e.message);
+					}}
+					}});
+			}});
+			
 			// Handle Create Campaign
 			document.getElementById('create-campaign-form').addEventListener('submit', async function(e) {{
 				e.preventDefault();

@@ -10,7 +10,7 @@ def create_campaign(slug, name):
     with DBAccess() as db:
         try:
             db.cursor.execute(
-                "INSERT INTO campaigns VALUES (?, ?)", (slug, name)
+                "INSERT INTO campaigns VALUES (?, ?, 1)", (slug, name)
             )
             return True
         except sqlite3.IntegrityError:
@@ -20,25 +20,31 @@ def get_campaigns():
     """Fetches all campaigns."""
     with DBAccess() as db:
         dbres = db.cursor.execute(
-            "SELECT slug, name FROM campaigns ORDER BY name ASC")
+            "SELECT slug, name, enabled FROM campaigns ORDER BY name ASC")
         rows = dbres.fetchall()
-        return [{"slug": row[0], "name": row[1]} for row in rows]
+        return [{"slug": row[0], "name": row[1], "enabled": bool(row[2])} for row in rows]
 
 def get_campaign_by_slug(slug):
     """Fetches a single campaign by its slug."""
     with DBAccess() as db:
         dbres = db.cursor.execute(
-            "SELECT slug, name FROM campaigns WHERE slug = ?", (slug,)
+            "SELECT slug, name, enabled FROM campaigns WHERE slug = ?", (slug,)
         )
         row = dbres.fetchone()
         if row:
-            return {"slug": row[0], "name": row[1]}
+            return {"slug": row[0], "name": row[1], "enabled": bool(row[2])}
         return None
 
 def delete_campaign(slug):
     """Deletes a campaign by its slug."""
     with DBAccess() as db:
         db.cursor.execute("DELETE FROM campaigns WHERE slug = ?", (slug,))
+
+# Set campaign enabled/disabled
+def set_campaign_enabled(slug, enabled):
+    """Set the enabled status of a campaign by slug."""
+    with DBAccess() as db:
+        db.cursor.execute("UPDATE campaigns SET enabled = ? WHERE slug = ?", (int(enabled), slug))
 
 
 # --- Existing Result Functions (Modified) ---
@@ -117,7 +123,7 @@ class DBAccess():
             
             # Create the campaigns table
             self.cursor.execute(
-                "CREATE TABLE campaigns (slug text PRIMARY KEY, name text UNIQUE)")
+                "CREATE TABLE campaigns (slug text PRIMARY KEY, name text UNIQUE, enabled integer DEFAULT 1)")
         else:
             # Migration: add new columns if they don't exist in results
             try:
@@ -141,7 +147,12 @@ class DBAccess():
             
             # NEW MIGRATION: create campaigns table if it doesn't exist, and add unique constraint to name
             try:
-                self.cursor.execute("CREATE TABLE campaigns (slug text PRIMARY KEY, name text UNIQUE)")
+                self.cursor.execute("CREATE TABLE campaigns (slug text PRIMARY KEY, name text UNIQUE, enabled integer DEFAULT 1)")
+            except:
+                pass
+            # Migration: add enabled column if missing
+            try:
+                self.cursor.execute("ALTER TABLE campaigns ADD COLUMN enabled integer DEFAULT 1")
             except:
                 pass
             # Try to add unique constraint to name if missing (for legacy DBs)
