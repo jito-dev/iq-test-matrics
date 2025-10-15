@@ -14,20 +14,28 @@ jobs:
 
     steps:
       - name: Checkout Code
-        # Changed 'actions:checkout@v4' to 'actions/checkout@v4'
         uses: actions/checkout@v4
-
-      - name: Set Script Permissions and Run Deployment
+        
+      # --- NEW STEP: Synchronize Code and Execute Deployment ---
+      - name: Pull Latest Code and Run Deployment
         run: |
           echo "Deployment Directory: $DEPLOY_DIR"
           
-          # 1. Set Permissions
-          chmod +x $DEPLOY_DIR/stop-prod.sh
-          chmod +x $DEPLOY_DIR/deploy-prod.sh
+          # 1. Navigate to the actual deployment directory
+          echo "Changing directory to $DEPLOY_DIR"
+          cd $DEPLOY_DIR
           
-          # 2. Run Deployment
-          echo "Executing deployment via scripts..."
-          $DEPLOY_DIR/stop-prod.sh
-          $DEPLOY_DIR/deploy-prod.sh
+          # 2. Set Permissions (Good practice, but can be done once outside the workflow if preferred)
+          # Note: The scripts stop-prod.sh and deploy-prod.sh must exist in $DEPLOY_DIR
+          chmod +x ./stop-prod.sh
+          chmod +x ./deploy-prod.sh
+          chmod +x ./pull-stop-start.sh # Using this single script is best!
           
-          echo "Deployment complete. Services are restarting."
+          # 3. Pull latest code, stop, and start the containers
+          # Assuming `pull-stop-start.sh` is configured correctly:
+          # #!/bin/bash
+          # git pull && ./stop-prod.sh && ./deploy-prod.sh
+          echo "Executing full deployment script: pull-stop-start.sh"
+          ./pull-stop-start.sh
+          
+          echo "Deployment complete. Services are restarted."
