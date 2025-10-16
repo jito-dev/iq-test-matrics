@@ -604,6 +604,12 @@ def admin_panel():
 				</tbody>
 			</table>
 		</div>
+
+		<div style="text-align:center; margin-bottom: 30px; padding-top: 32px;">
+			<img src="/assets/img/iq_curve.png" alt="IQ Curve" style="max-width: 100%; height: auto; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08);">
+			<div style="color: #444; font-size: 15px; margin-top: 12px; font-style: italic; font-weight: 500; letter-spacing: 0.2px;">IQ distribution curve for reference</div>
+		</div>
+
 		<script>
             // CSV Download Script
             document.getElementById('download-csv-btn').addEventListener('click', function() {{
